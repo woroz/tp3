@@ -30,7 +30,9 @@ export const config = {
     jwt: {
         secret: requireEnv('JWT_SECRET'),
         refreshSecret: requireEnv('JWT_REFRESH_SECRET'),
-        expire: '2h'
+        googleRegistroSecret: requireEnv('JWT_GOOGLE_REGISTRO_SECRET'),
+        expire: '2h' as const,
+        expireRefresh: '7d' as const
     },
     mercadoPago: {
         accessToken: optionalEnv('MP_ACCESS_TOKEN'),
@@ -53,5 +55,10 @@ export const config = {
     Groq: {
         GROP_API_KEY: requireEnv('GROQ_API_KEY'),
         GROQ_MODEL: requireEnv('GROQ_MODEL')
+    },
+    google: {
+        clientId: requireEnv('GOOGLE_CLIENT_ID'),
+        clientSecret: requireEnv('GOOGLE_CLIENT_SECRET'),
+        redirectUri: requireEnv('GOOGLE_REDIRECT_URI')
     }
 }

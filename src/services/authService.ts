@@ -7,6 +7,15 @@ import type { JwtUser } from '../types/jwt.js'
 import { AppError } from '../utils/error.js'
  
 type Ubicacion = { pais?: string; provincia?: string; ciudad?: string }
+
+type Usuario = {
+    id_usuario: string
+    nombre: string
+    email: string
+    rol: Role
+    profesor?: { id_profesor: string } | null
+    alumno?: { id_alumno: string } | null
+}
  
 async function geocodificarDireccion(direccion: string, ubicacion: Ubicacion = {}): Promise<{ latitud: number; longitud: number }> {
     // Si el usuario eligio pais/provincia/ciudad, se agregan a la busqueda para mejorar el resultado.
@@ -49,9 +58,31 @@ async function geocodificarDireccion(direccion: string, ubicacion: Ubicacion = {
  
     return { latitud, longitud }
 }
+
+const armarUsuario = (usuario: Usuario): JwtUser => {
+    let id_rol: string | undefined
+    if (usuario.rol === 'profesor') id_rol = usuario.profesor?.id_profesor
+    if (usuario.rol === 'alumno') id_rol = usuario.alumno?.id_alumno
+
+    return { 
+        id_usuario: usuario.id_usuario, 
+        id_rol,
+        nombre: usuario.nombre,
+        email: usuario.email,
+        rol: usuario.rol
+    }
+}
+
+const emitirSesion = (usuario: Usuario) => {
+    const token = jwt.sign(armarUsuario(usuario), config.jwt.secret, { expiresIn: config.jwt.expire })
+    const refreshToken = jwt.sign({ id_usuario: usuario.id_usuario }, config.jwt.refreshSecret, { expiresIn: config.jwt.expireRefresh })
+    return { token, refreshToken }
+
+}
  
 export const authService = {
-    register: async (email: string, password: string, nombre: string, rol: Role, direccion: string, ubicacionElegida: Ubicacion = {}) => {
+    emitirSesion,
+    register: async (email: string, password: string | null, nombre: string, rol: Role, direccion: string, ubicacionElegida: Ubicacion = {}, googleId?: string) => {
     if (rol === "admin") {
         throw new AppError('No se puede registrar un usuario con rol admin', 400)
     }
@@ -61,13 +92,14 @@ export const authService = {
         throw new AppError('El email ya esta registrado', 400)
     }
  
-    const hash = await hashPassword(password)
+    const hash = password ? await hashPassword(password) : null
     const ubicacion = await geocodificarDireccion(direccion, ubicacionElegida)
  
     const user = await prisma.usuario.create({
         data: {
             email,
             contrasena: hash,
+            googleId,
             nombre,
             rol,
             ...(rol === 'profesor' && {
@@ -102,7 +134,7 @@ export const authService = {
         }
     })
  
-    return { id_usuario: user.id_usuario }
+    return { id_usuario: user.id_usuario, user }
 },
  
     login: async (email: string, password: string) => {
@@ -115,18 +147,14 @@ export const authService = {
         })
         if (!user) throw new AppError('Credenciales invalidas', 401)
         
+        if (!user.contrasena) {
+            throw new AppError('Esta cuenta usa inicio de sesion con Google', 401)
+        }
+        
         const validarPassword = await verifyPassword(user.contrasena, password)
         if (!validarPassword) throw new AppError('Credenciales invalidas', 401)
         
-        let id_rol: string | undefined;
-        if (user.rol === 'profesor') id_rol = user.profesor?.id_profesor;
-        if (user.rol === 'alumno')   id_rol = user.alumno?.id_alumno;
- 
-        const info: JwtUser = { id_usuario: user.id_usuario, id_rol: id_rol, nombre: user.nombre, email: user.email, rol: user.rol }
-        const token = jwt.sign(info, config.jwt.secret, { expiresIn: '1h' })
-        const refreshToken = jwt.sign({ id_usuario: user.id_usuario }, config.jwt.refreshSecret, { expiresIn: '7d' })
- 
-        return { token, refreshToken }
+        return emitirSesion(user)
     },
  
     refreshToken: async (refreshToken: string) => {
@@ -142,18 +170,7 @@ export const authService = {
             throw new AppError('Usuario no encontrado', 404)
         }
  
-        let id_rol: string | undefined;
-        if (user.rol === 'profesor') id_rol = user.profesor?.id_profesor;
-        if (user.rol === 'alumno')   id_rol = user.alumno?.id_alumno;
- 
-        const info: JwtUser = {
-            id_usuario: user.id_usuario,
-            id_rol: id_rol,
-            nombre: user.nombre,
-            email: user.email,
-            rol: user.rol
-        }
-        const newAccessToken = jwt.sign(info, config.jwt.secret, { expiresIn: '15m' })         
+        const newAccessToken = jwt.sign(armarUsuario(user), config.jwt.secret, { expiresIn: '15m' })         
         const newRefreshToken = jwt.sign( { id_usuario: user.id_usuario}, config.jwt.refreshSecret, { expiresIn: '7d' })
         return {newAccessToken, newRefreshToken }
     }

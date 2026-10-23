@@ -11,10 +11,12 @@ model Usuario {
   id_usuario          String          @id @default(uuid())
   nombre              String
   email               String          @unique
-  contrasena          String          @map("contraseña")
+  contrasena          String?          @map("contraseña")
+  googleId            String?         @unique
   rol                 Role
   createdAt           DateTime        @default(now())
   updateAt            DateTime        @updatedAt
+
   alumno              Alumno?
   logrosObtenidos     LogroObtenido[]
   notificaciones      Notificacion[]
